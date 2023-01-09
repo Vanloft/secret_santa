@@ -145,4 +145,40 @@ impl UserService {
             Some(..) => true,
         }
     }
+    pub fn close_group(&mut self, caller: &User, group: &Group) -> Result<(), ()> {
+        use crate::schema::groups::dsl::*;
+        if !Self::is_user_in_database(&caller.name) {
+            println!("User {} was not found in database", caller.name);
+            return Err(());
+        }
+        if !Self::is_group_in_database(&group.name) {
+            println!("Group {} was not found in database", group.name);
+            return Err(());
+        }
+        if !Self::is_user_in_group(caller, group, &mut self.conn) {
+            println!("User {} was not found in group {}", caller.name, group.name);
+            return Err(());
+        }
+        if !Self::is_admin(caller, group, &mut self.conn) {
+            println!("User {} is not admin in group {}", caller.name, group.name);
+            return Err(());
+        }
+        diesel::update(groups.filter(id.eq(group.id)))
+            .set(current_state.eq(GroupStatus::Closed))
+            .get_result::<Group>(&mut self.conn);
+        Ok(())
+    }
+    fn is_admin(user: &User, group: &Group, conn: &mut PgConnection) -> bool {
+        use crate::schema::group_user::dsl::*;
+        let user = group_user
+            .filter(BoolExpressionMethods::and(
+                BoolExpressionMethods::and(group_id.eq(group.id), user_id.eq(user.id)),
+                user_role.eq(UserRole::Admin),
+            ))
+            .first::<GroupUser>(conn);
+        match user {
+            Ok(..) => true,
+            Err(..) => false,
+        }
+    }
 }
